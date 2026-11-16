@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Panorama（タブレット横）</title>
+<style>
+  :root {
+    --bg: #000;
+    --card: #2b2b2d;
+    --text: #fff;
+    --sub: #9a9aa0;
+    --accent: #ff2d6f;
+    --gap: 2.2vh;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Roboto", "Segoe UI", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
+    padding: max(2.5vh, env(safe-area-inset-top)) 3vw 2.5vh;
+    overflow: hidden; user-select: none; cursor: none;
+    height: 100vh; height: 100dvh;
+    display: grid;
+    grid-template-rows: auto 1fr;   /* 上段：時刻 / 下段：天気と地震 */
+    gap: var(--gap);
+  }
+
+  /* ===== 上段：時刻 ===== */
+  .top { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .clock { display: flex; align-items: center; gap: 2vh; }
+  .colon { font-size: 14vh; font-weight: 700; line-height: 1; padding-bottom: 2vh; }
+  .card {
+    position: relative; width: 25vh; height: 31vh; perspective: 110vh;
+    font-size: 19vh; font-weight: 700; line-height: 31vh; text-align: center; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .half, .flap { position: absolute; left: 0; right: 0; height: 50%; overflow: hidden; background: var(--card); }
+  .half span, .flap span { position: absolute; left: 0; right: 0; height: 31vh; line-height: 31vh; }
+  .top-h, .flap.f-top { top: 0; border-radius: 2vh 2vh 0 0; }
+  .bottom, .flap.f-bottom { bottom: 0; border-radius: 0 0 2vh 2vh; }
+  .top-h span, .flap.f-top span { top: 0; }
+  .bottom span, .flap.f-bottom span { bottom: 0; }
+  .bottom, .flap.f-bottom { background: #252527; }
+  .flap { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+  .flap.f-top { transform-origin: bottom; z-index: 2; }
+  .flap.f-bottom { transform-origin: top; z-index: 2; transform: rotateX(90deg); }
+  .card.flip .flap.f-top { animation: flipTop .3s ease-in forwards; }
+  .card.flip .flap.f-bottom { animation: flipBottom .3s .3s ease-out forwards; }
+  @keyframes flipTop    { to { transform: rotateX(-90deg); } }
+  @keyframes flipBottom { to { transform: rotateX(0deg); } }
+  .card::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: .5vh; margin-top: -.25vh; background: #000; z-index: 5; }
+  /* 日付：時計と同じ幅。左に年月日、右に曜日 */
+  /* 上段は下段と同じ全幅：左に時計、右の残り幅いっぱいに日付 */
+  .top { flex-direction: row; justify-content: space-between; align-items: center; gap: 3vw; }
+  .date { flex: 1; min-width: 0; container-type: inline-size; display: flex; flex-direction: column; align-items: center; gap: 2vh; font-weight: 800; line-height: 1.1; white-space: nowrap; }
+  #date-ymd { font-size: min(11cqw, 6.5vh); }
+  .pills { display: flex; gap: 1.2vh; font-size: min(8cqw, 4.6vh); }
+  .pills > div { padding: .3em .9em .45em; border-radius: 99px; background: #2b2b2d; }
+  #date-r.dai { color: #ffd54a; } #date-r.butsu { color: #8d8d93; }
+  #date-w.sun { color: #ff6b6b; } #date-w.sat { color: #5aa9ff; }
+
+  /* ===== 下段 ===== */
+  .bottom-row { display: grid; grid-template-columns: 1fr 1.5fr; gap: var(--gap); min-height: 0; }
+
+  /* 現在地の天気 */
+  .wx {
+    border-radius: 2.6vh; padding: 2.6vh 2.4vw; min-height: 0;
+    background: linear-gradient(135deg, #1b2733, #0b0f14);
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .wx-head { font-size: 3vh; color: #b8bcc4; display: flex; align-items: center; gap: 1vh; }
+  .wx-head svg { width: 3.2vh; height: 3.2vh; }
+  .wx-main { display: flex; align-items: center; gap: 2vw; }
+  .wx-icon svg { width: 15vh; height: 15vh; }
+  .wx-temp { font-size: 15vh; font-weight: 700; line-height: 1; }
+  .wx-desc { font-size: 4.4vh; margin-top: .6vh; font-weight: 600; }
+  .wx-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.4vh 1vw; }
+  .wx-grid div { font-size: 2.8vh; color: #b8bcc4; }
+  .wx-grid b { display: block; font-size: 4.4vh; color: var(--text); font-weight: 700; margin-top: .2vh; }
+
+  /* 地震情報 */
+  .quake {
+    position: relative; border-radius: 2.6vh; padding: 2.4vh 2.4vw; overflow: hidden; min-height: 0;
+    background: radial-gradient(120% 90% at 100% 0%, rgba(160,20,20,.55), transparent 60%), linear-gradient(135deg, #1a1a1c, #0b0b0c);
+    display: flex; align-items: center;
+  }
+  .quake::before {
+    content: ""; position: absolute; inset: 0; opacity: .25; pointer-events: none;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 7px, rgba(255,255,255,.07) 7px 8px),
+      repeating-linear-gradient(0deg, transparent 0 17px, rgba(255,255,255,.05) 17px 18px);
+  }
+  .q-title { position: absolute; top: 2vh; right: 6vw; font-size: 2.4vh; color: var(--sub); border-bottom: 1px solid #555; padding-bottom: 2px; }
+  .q-body { position: relative; display: flex; gap: 2vw; align-items: center; width: 100%; padding-right: 2.2vw; }
+  .shindo { flex: none; width: 20vh; border-radius: 1.8vh; padding: 1.2vh 1vh 1.8vh; text-align: center; background: #2d8cff; color: #fff; }
+  .shindo small { display: block; font-size: 2.6vh; font-weight: 700; }
+  .shindo b { display: block; font-size: 14vh; line-height: 1.05; font-weight: 700; }
+  .shindo b.two { font-size: 9vh; padding: 2vh 0 1.2vh; }
+  .q-rows { flex: 1; min-width: 0; }
+  .row { display: flex; flex-direction: column; gap: .2vh; padding: .7vh 0 .7vh 1.4vw; border-left: 1px solid #555; }
+  .row .k { display: flex; align-items: baseline; gap: 1vh; font-size: 2.4vh; color: #b8bcc4; line-height: 1.2; }
+  .row .k i { font-style: normal; font-size: 1.8vh; opacity: .8; }
+  .row .v { min-width: 0; font-size: 4vh; font-weight: 700; line-height: 1.25; white-space: nowrap; }
+  .row .v.area { white-space: normal; font-size: 3vh; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .row .v em { color: var(--sub); font-style: normal; font-weight: 400; margin: 0 .6vw; }
+  .dots { position: absolute; right: 1.4vw; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 1.4vh; }
+  .dots button { width: 1.1vh; height: 1.1vh; border-radius: 50%; border: 0; background: #666; padding: 0; cursor: pointer; }
+  .dots button.on { background: #fff; }
+  .q-status { text-align: center; color: var(--sub); font-size: 2.4vh; width: 100%; }
+  .refresh {
+    position: absolute; right: 1.2vw; top: 1.2vh; width: 5vh; height: 5vh; border-radius: 50%;
+    border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer;
+  }
+  .refresh svg { width: 2.6vh; height: 2.6vh; }
+  .refresh.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .quake.new { animation: quakeNew 1s ease-out 4; }
+  @keyframes quakeNew { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,45,111,0); } 40% { box-shadow: 0 0 0 1.2vh rgba(255,45,111,.7); } }
+  /* 緊急地震速報 */
+  #eew { position: fixed; left: 0; right: 0; top: 0; z-index: 99; background: #d50000; color: #fff; text-align: center; padding: 2vh 3vw; animation: eewBlink 1s steps(2) infinite; }
+  #eew[hidden] { display: none; }
+  #audio-hint { position: fixed; left: 50%; bottom: 1vh; transform: translateX(-50%); z-index: 90; font-size: 1.9vh; color: #ffb74d; background: rgba(0,0,0,.8); padding: .6vh 1.4vw; border-radius: 99px; white-space: nowrap; }
+  #audio-hint[hidden] { display: none; }
+  #eew b { display: block; font-size: 5vh; }
+  #eew span { display: block; font-size: 3vh; margin-top: .6vh; }
+  @keyframes eewBlink { 50% { background: #7f0000; } }
+
+  /* 縦向きになったら下段を縦積み */
+  @media (orientation: portrait) {
+    .bottom-row { grid-template-columns: 1fr; }
+    .card { width: 24vw; height: 30vw; font-size: 19vw; line-height: 30vw; }
+    .half span, .flap span { height: 30vw; line-height: 30vw; }
+    .colon { font-size: 12vw; }
+    .top { flex-direction: column; gap: 2vh; }
+    .date { flex: none; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="audio-hint">🔊 画面を一度タップすると、緊急地震速報の警報音が有効になります</div>
+<div id="eew" hidden><b>緊急地震速報（警報）</b><span id="eew-text"></span></div>
+
+<section class="top">
+  <div class="clock">
+    <div class="card" id="c-h"></div>
+    <div class="colon">:</div>
+    <div class="card" id="c-m"></div>
+    <div class="colon">:</div>
+    <div class="card" id="c-s"></div>
+  </div>
+  <div class="date">
+    <div id="date-ymd"></div>
+    <div class="pills"><div id="date-w"></div><div id="date-r"></div></div>
+  </div>
+</section>
+
+<section class="bottom-row">
+  <div class="wx">
+    <div class="wx-head">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      <span id="w-place">現在地の天気</span>
+    </div>
+    <div class="wx-main">
+      <div class="wx-icon" id="w-icon"></div>
+      <div>
+        <div class="wx-temp" id="w-temp">--°</div>
+        <div class="wx-desc" id="w-desc">取得中…</div>
+      </div>
+    </div>
+    <div class="wx-grid">
+      <div>最高 / 最低<b id="w-hl">--</b></div>
+      <div>降水確率<b id="w-pop">--</b></div>
+      <div>湿度<b id="w-hum">--</b></div>
+      <div>風速<b id="w-wind">--</b></div>
+    </div>
+  </div>
+
+  <div class="quake">
+    <div class="q-title">地震情報</div>
+    <div class="q-body" id="q-body"><div class="q-status">読み込み中…</div></div>
+    <div class="dots" id="dots"></div>
+    <button class="refresh" id="refresh" aria-label="更新">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+    </button>
+  </div>
+</section>
+
+<script>
+/* ================= 設定 ================= */
+const FALLBACK_LOCATION = { lat: 35.43, lon: 133.25, name: '安来市' }; // 設置場所（島根県安来市）
+const USE_GEOLOCATION = false;   // true にすると、端末の現在地を優先する（位置情報の許可が必要）
+const QUAKE_COUNT = 5;
+const QUAKE_ROTATE_MS = 8000;
+const QUAKE_POLL_MS = 60 * 1000;
+const WEATHER_POLL_MS = 15 * 60 * 1000;
+
+/* ================= フリップ時計 ================= */
+function buildCard(el) {
+  el.innerHTML =
+    '<div class="half top-h"><span></span></div><div class="half bottom"><span></span></div>' +
+    '<div class="flap f-top"><span></span></div><div class="flap f-bottom"><span></span></div>';
+  el._v = null;
+}
+function setCard(el, val) {
+  if (el._v === val) return;
+  const [top, bottom, fTop, fBottom] = el.querySelectorAll('span');
+  if (el._v === null) { top.textContent = bottom.textContent = fTop.textContent = fBottom.textContent = val; el._v = val; return; }
+  top.textContent = val; fTop.textContent = el._v; fBottom.textContent = val;
+  el.classList.remove('flip'); void el.offsetWidth; el.classList.add('flip');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { bottom.textContent = val; fTop.textContent = val; el.classList.remove('flip'); }, 620);
+  el._v = val;
+}
+const cH = document.getElementById('c-h'), cM = document.getElementById('c-m'), cS = document.getElementById('c-s');
+[cH, cM, cS].forEach(buildCard);
+const pad = n => String(n).padStart(2, '0');
+// 元号表記（令和）：例「令和8年11月16日（月）」
+function wareki(d) {
+  const y = d.getFullYear() - 2018;   // 2019年 = 令和元年
+  return [`令和${y === 1 ? '元' : y}年`, `${d.getMonth() + 1}月${d.getDate()}日`];
+}
+// 六曜：旧暦の（月＋日）を6で割った余り（0大安 1赤口 2先勝 3友引 4先負 5仏滅）
+const ROKUYO = ['大安', '赤口', '先勝', '友引', '先負', '仏滅'];
+function rokuyo(d) {
+  const noon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+  const p = new Intl.DateTimeFormat('en-u-ca-chinese', { month: 'numeric', day: 'numeric' }).formatToParts(noon);
+  const m = parseInt(p.find(x => x.type === 'month').value, 10);   // 閏月は本来の月番号のまま
+  const day = parseInt(p.find(x => x.type === 'day').value, 10);
+  return ROKUYO[(m + day) % 6];
+}
+function tick() {
+  const d = new Date();
+  setCard(cH, pad(d.getHours())); setCard(cM, pad(d.getMinutes())); setCard(cS, pad(d.getSeconds()));
+  const [wy, wmd] = wareki(d);
+  document.getElementById('date-ymd').textContent = wy + wmd;
+  const dw = document.getElementById('date-w');
+  dw.textContent = '日月火水木金土'[d.getDay()] + '曜日';
+  dw.className = d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : '';
+  const dr = document.getElementById('date-r'), r = rokuyo(d);
+  dr.textContent = r;
+  dr.className = r === '大安' ? 'dai' : r === '仏滅' ? 'butsu' : '';
+  setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+}
+tick();
+
+/* ================= 天気（Open-Meteo） ================= */
+const ICON = {
+  sun:   '<svg viewBox="0 0 24 24" fill="#ffd54a"><circle cx="12" cy="12" r="5"/><g stroke="#ffd54a" stroke-width="2" stroke-linecap="round"><path d="M12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></g></svg>',
+  cloud: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M7 19a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9.5a4.75 4.75 0 0 1-.5 9.5z"/></svg>',
+  partly:'<svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="4" fill="#ffd54a"/><path d="M8 20a4.5 4.5 0 0 1-.4-8.98A5.5 5.5 0 0 1 18.3 12 4.5 4.5 0 0 1 17.5 20z" fill="#fff"/></svg>',
+  rain:  '<svg viewBox="0 0 24 24"><path d="M7 15a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 5.5a4.75 4.75 0 0 1-.5 9.5z" fill="#cfd8dc"/><g stroke="#4fc3f7" stroke-width="2" stroke-linecap="round"><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/></g></svg>',
+  snow:  '<svg viewBox="0 0 24 24"><path d="M7 15a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 5.5a4.75 4.75 0 0 1-.5 9.5z" fill="#cfd8dc"/><g fill="#fff"><circle cx="8" cy="19" r="1.5"/><circle cx="12" cy="21" r="1.5"/><circle cx="16" cy="19" r="1.5"/></g></svg>',
+  storm: '<svg viewBox="0 0 24 24"><path d="M7 14a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 4.5a4.75 4.75 0 0 1-.5 9.5z" fill="#b0bec5"/><path d="M12.5 12l-3 5h2.5l-1 5 4.5-6.5H13z" fill="#ffd54a"/></svg>',
+  fog:   '<svg viewBox="0 0 24 24" stroke="#cfd8dc" stroke-width="2" stroke-linecap="round"><path d="M3 8h18M5 12h14M3 16h18M7 20h10"/></svg>'
+};
+function wx(code) {
+  if (code === 0) return [ICON.sun, '快晴'];
+  if (code === 1) return [ICON.sun, '晴れ'];
+  if (code === 2) return [ICON.partly, '晴れ時々くもり'];
+  if (code === 3) return [ICON.cloud, 'くもり'];
+  if (code === 45 || code === 48) return [ICON.fog, '霧'];
+  if (code >= 95) return [ICON.storm, '雷雨'];
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return [ICON.snow, '雪'];
+  if (code >= 80) return [ICON.rain, 'にわか雨'];
+  if (code >= 51 && code <= 57) return [ICON.rain, '霧雨'];
+  return [ICON.rain, '雨'];
+}
+function getLocation() {
+  return new Promise(res => {
+    if (!USE_GEOLOCATION || !navigator.geolocation) return res(FALLBACK_LOCATION);
+    navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lon: p.coords.longitude, name: '現在地' }),
+      () => res(FALLBACK_LOCATION),
+      { timeout: 8000, maximumAge: 60 * 60 * 1000 });
+  });
+}
+let loc = null;
+async function updateWeather() {
+  try {
+    loc = loc || await getLocation();
+    document.getElementById('w-place').textContent = loc.name + 'の天気';
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat.toFixed(2)}&longitude=${loc.lon.toFixed(2)}` +
+      `&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&wind_speed_unit=ms&forecast_days=1`;
+    const j = await (await fetch(u)).json();
+    const c = j.current, d = j.daily, [icon, desc] = wx(c.weather_code);
+    document.getElementById('w-icon').innerHTML = icon;
+    document.getElementById('w-desc').textContent = desc;
+    document.getElementById('w-temp').textContent = Math.round(c.temperature_2m) + '°';
+    document.getElementById('w-hl').textContent = Math.round(d.temperature_2m_max[0]) + '° / ' + Math.round(d.temperature_2m_min[0]) + '°';
+    document.getElementById('w-pop').textContent = (d.precipitation_probability_max[0] ?? '--') + '%';
+    document.getElementById('w-hum').textContent = c.relative_humidity_2m + '%';
+    document.getElementById('w-wind').textContent = Math.round(c.wind_speed_10m * 10) / 10 + ' m/s';
+  } catch (e) { /* 失敗時は前回の表示のまま */ }
+}
+updateWeather();
+setInterval(updateWeather, WEATHER_POLL_MS);
+
+/* ================= 地震情報（P2P地震情報 API） ================= */
+const SCALE = {
+  10: ['1', '#2d8cff'], 20: ['2', '#2fb86a'], 30: ['3', '#d6b800'], 40: ['4', '#f59a1b'],
+  45: ['5弱', '#f2692b'], 50: ['5強', '#e8452c'], 55: ['6弱', '#d81f3a'], 60: ['6強', '#b3126e'], 70: ['7', '#7b1fa2']
+};
+let quakes = [], qIndex = 0, qTimer = null;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function renderQuake() {
+  const body = document.getElementById('q-body'), dots = document.getElementById('dots');
+  if (!quakes.length) { dots.innerHTML = ''; return; }
+  const q = quakes[qIndex], eq = q.earthquake, h = eq.hypocenter || {};
+  const [label, color] = SCALE[eq.maxScale] || ['–', '#666'];
+  const mag = h.magnitude >= 0 ? 'M' + Number(h.magnitude).toFixed(1) : 'M不明';
+  const depth = h.depth > 0 ? h.depth + 'km' : (h.depth === 0 ? 'ごく浅い' : '不明');
+  const seen = [];
+  (q.points || []).forEach(p => { if (!seen.includes(p.addr)) seen.push(p.addr); });
+  const area = seen.length ? seen.join(', ') : (q.issue && q.issue.type === 'Foreign' ? '（海外の地震）' : '—');
+  const t = (eq.time || q.time || '').slice(0, 16).replace(/-/g, '/');
+  body.innerHTML = `
+    <div class="shindo" style="background:${color}"><small>最大震度</small><b class="${label.length > 1 ? 'two' : ''}">${esc(label)}</b></div>
+    <div class="q-rows">
+      <div class="row"><div class="k">発生時刻<i>Date</i></div><div class="v">${esc(t)}</div></div>
+      <div class="row"><div class="k">震源地<i>Epicenter</i></div><div class="v">${esc(h.name || '調査中')}</div></div>
+      <div class="row"><div class="k">規模/深さ<i>Mag/Depth</i></div><div class="v">${mag}<em>/</em>${depth}</div></div>
+      <div class="row"><div class="k">観測した地域<i>Area</i></div><div class="v area">${esc(area)}</div></div>
+    </div>`;
+  dots.innerHTML = quakes.map((_, i) => `<button class="${i === qIndex ? 'on' : ''}" data-i="${i}" aria-label="${i + 1}件目"></button>`).join('');
+}
+function startRotate() {
+  clearInterval(qTimer);
+  if (quakes.length > 1) qTimer = setInterval(() => { qIndex = (qIndex + 1) % quakes.length; renderQuake(); }, QUAKE_ROTATE_MS);
+}
+document.getElementById('dots').addEventListener('click', e => {
+  const i = e.target.dataset && e.target.dataset.i;
+  if (i === undefined) return;
+  qIndex = +i; renderQuake(); startRotate();
+});
+async function updateQuake() {
+  const btn = document.getElementById('refresh');
+  btn.classList.add('spin');
+  try {
+    const r = await fetch(`https://api.p2pquake.net/v2/history?codes=551&limit=${QUAKE_COUNT}`);
+    quakes = await r.json();
+    qIndex = Math.min(qIndex, Math.max(quakes.length - 1, 0));
+    renderQuake(); startRotate();
+  } catch (e) {
+    if (!quakes.length) document.getElementById('q-body').innerHTML = '<div class="q-status">地震情報を取得できませんでした</div>';
+  }
+  setTimeout(() => btn.classList.remove('spin'), 600);
+}
+document.getElementById('refresh').addEventListener('click', updateQuake);
+updateQuake();
+setInterval(updateQuake, QUAKE_POLL_MS); // WebSocketが切れていたときの保険
+
+/* ---- リアルタイム受信（WebSocket）：新しい地震を即座に表示 ---- */
+function flashQuake() {
+  const el = document.querySelector('.quake');
+  el.classList.remove('new'); void el.offsetWidth; el.classList.add('new');
+}
+/* ---- 警報音（Web Audio）。ブラウザの仕様で、一度画面をタップするまで鳴らせない ---- */
+let actx = null, alarmNodes = [];
+const audioHint = document.getElementById('audio-hint');
+function unlockAudio() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (actx.state === 'suspended') actx.resume();
+  audioHint.hidden = actx.state !== 'suspended' ? true : false;
+}
+['click', 'touchstart', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio));
+function stopAlarm() { alarmNodes.forEach(o => { try { o.stop(); } catch (e) {} }); alarmNodes = []; }
+function playAlarm(seconds = 12) {
+  stopAlarm();
+  if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
+  if (!actx || actx.state !== 'running') return;
+  const t0 = actx.currentTime + 0.05;
+  for (let i = 0; i < seconds * 2; i++) {           // 0.5秒ごとに高低を交互に
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'square'; o.frequency.value = i % 2 ? 660 : 990;
+    const s = t0 + i * 0.5;
+    g.gain.setValueAtTime(0.0001, s);
+    g.gain.exponentialRampToValueAtTime(0.5, s + 0.02);
+    g.gain.setValueAtTime(0.5, s + 0.42);
+    g.gain.exponentialRampToValueAtTime(0.0001, s + 0.48);
+    o.connect(g).connect(actx.destination);
+    o.start(s); o.stop(s + 0.5);
+    alarmNodes.push(o);
+  }
+}
+let eewTimer = null;
+function showEEW(m) {
+  if (m.cancelled || m.test) return;
+  playAlarm();
+  const h = (m.earthquake && m.earthquake.hypocenter) || {};
+  const areas = [...new Set((m.areas || []).map(a => a.name))].join('・');
+  document.getElementById('eew-text').textContent =
+    `${h.name || '震源調査中'}　${h.magnitude >= 0 ? 'M' + h.magnitude : ''}　対象：${areas || '—'}`;
+  const b = document.getElementById('eew'); b.hidden = false;
+  clearTimeout(eewTimer); eewTimer = setTimeout(() => { b.hidden = true; stopAlarm(); }, 90 * 1000);
+}
+let wsDelay = 1000;
+function connectWS() {
+  let ws;
+  try { ws = new WebSocket('wss://api.p2pquake.net/v2/ws'); } catch (e) { return setTimeout(connectWS, 30000); }
+  ws.onopen = () => { wsDelay = 1000; };
+  ws.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (m.code === 551) {
+      if (quakes.some(q => q.id === m.id)) return;
+      quakes.unshift(m); quakes = quakes.slice(0, QUAKE_COUNT);
+      qIndex = 0; renderQuake(); startRotate(); flashQuake();
+    } else if (m.code === 556) {
+      showEEW(m);
+    }
+  };
+  ws.onclose = () => { setTimeout(connectWS, wsDelay); wsDelay = Math.min(wsDelay * 2, 60000); };
+  ws.onerror = () => ws.close();
+}
+connectWS();
+
+/* ================= サイネージ用 ================= */
+// 画面をタップ（クリック）すると全画面の入/切
+document.addEventListener('click', e => {
+  if (e.target.closest('.refresh, .dots')) return;
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+  else document.exitFullscreen?.();
+});
+// 通信が戻ったらすぐ取り直す
+window.addEventListener('online', () => { updateWeather(); updateQuake(); });
+// 毎日 午前3時に再読み込み（長時間動かしてもメモリや表示が乱れないように）。通信できないときは1時間後に再挑戦
+function scheduleReload() {
+  const now = new Date(), next = new Date(now);
+  next.setHours(3, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  setTimeout(function reload() {
+    if (navigator.onLine) location.reload(); else setTimeout(reload, 60 * 60 * 1000);
+  }, next - now);
+}
+// ※ 再読み込みすると警報音のロックが戻る（再タップが必要になる）ため、自動の再読み込みは行わない
+
+/* ================= 画面を消灯させない（対応端末のみ） ================= */
+async function keepAwake() { try { await navigator.wakeLock.request('screen'); } catch (e) {} }
+if ('wakeLock' in navigator) {
+  keepAwake();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+}
+</script>
+</body>
+</html>
