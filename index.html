@@ -200,7 +200,8 @@ const WEATHER_POLL_MS = 10 * 60 * 1000;   // アメダスは10分ごとに更新
 
 // 気象庁のデータ（安来市の近く）。気温・湿度・風は実測、天気・降水確率・最高/最低は予報
 const JMA = {
-  amedas: '69076', amedasName: '米子',   // 安来市から約8kmの観測点
+  amedas: '69076', amedasName: '米子',   // 安来市から約8kmの観測点（気温・湿度・風）
+  rainStation: '68181',                  // 伯太（安来市内の観測点。雨量のみ測定）
   forecastCode: '320000', forecastArea: '東部', tempArea: '松江'   // 島根県の東部
 };
 
@@ -329,7 +330,9 @@ async function updateWeatherJMA() {
   const tmax = pick(today + 'T09') ?? pick(tmr + 'T09');
   const tmin = pick(tmr + 'T00') ?? pick(today + 'T00');
 
-  const raining = (o.precipitation10m && o.precipitation10m[0] > 0);
+  // 雨の判定は安来市内の観測点（伯太）を優先。取れなければ米子の値を使う
+  const ro = (map[JMA.rainStation] && map[JMA.rainStation].precipitation10m) ? map[JMA.rainStation] : o;
+  const raining = !!(ro.precipitation10m && ro.precipitation10m[0] > 0);
   document.getElementById('w-place').textContent = FALLBACK_LOCATION.name + 'の天気';
   document.getElementById('w-src').textContent = `実測 ${JMA.amedasName} ${t.slice(11, 16)}`;
   document.getElementById('w-icon').innerHTML = jmaIcon(code, text, raining);
