@@ -74,7 +74,8 @@
   .wx-main { display: flex; align-items: center; gap: 2vw; }
   .wx-icon svg { width: 15vh; height: 15vh; }
   .wx-temp { font-size: 15vh; font-weight: 700; line-height: 1; }
-  .wx-desc { font-size: 4.4vh; margin-top: .6vh; font-weight: 600; }
+  .wx-desc { font-size: 3.6vh; margin-top: .6vh; font-weight: 600; line-height: 1.25; max-height: 2.5em; overflow: hidden; }
+  #w-src { margin-left: auto; font-size: 2vh; color: #8d9199; }
   .wx-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.4vh 1vw; }
   .wx-grid div { font-size: 2.8vh; color: #b8bcc4; }
   .wx-grid b { display: block; font-size: 4.4vh; color: var(--text); font-weight: 700; margin-top: .2vh; }
@@ -139,7 +140,7 @@
 </head>
 <body>
 
-<div id="audio-hint">🔊 画面を一度タップすると、緊急地震速報の警報音が有効になります</div>
+<div id="audio-hint">🔊 画面を一度タップすると、緊急地震速報の警報音と時報が有効になります</div>
 <div id="eew" hidden><b>緊急地震速報（警報）</b><span id="eew-text"></span></div>
 
 <section class="top">
@@ -161,6 +162,7 @@
     <div class="wx-head">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>
       <span id="w-place">現在地の天気</span>
+      <span id="w-src"></span>
     </div>
     <div class="wx-main">
       <div class="wx-icon" id="w-icon"></div>
@@ -170,7 +172,7 @@
       </div>
     </div>
     <div class="wx-grid">
-      <div>最高 / 最低<b id="w-hl">--</b></div>
+      <div>最高 / 最低（予報）<b id="w-hl">--</b></div>
       <div>降水確率<b id="w-pop">--</b></div>
       <div>湿度<b id="w-hum">--</b></div>
       <div>風速<b id="w-wind">--</b></div>
@@ -194,7 +196,18 @@ const USE_GEOLOCATION = false;   // true にすると、端末の現在地を優
 const QUAKE_COUNT = 5;
 const QUAKE_ROTATE_MS = 8000;
 const QUAKE_POLL_MS = 60 * 1000;
-const WEATHER_POLL_MS = 15 * 60 * 1000;
+const WEATHER_POLL_MS = 10 * 60 * 1000;   // アメダスは10分ごとに更新される
+
+// 気象庁のデータ（安来市の近く）。気温・湿度・風は実測、天気・降水確率・最高/最低は予報
+const JMA = {
+  amedas: '69076', amedasName: '米子',   // 安来市から約8kmの観測点
+  forecastCode: '320000', forecastArea: '東部', tempArea: '松江'   // 島根県の東部
+};
+
+// 時報（NHK風：ピッ・ピッ・ピッ・ポーン）。この時間帯の「毎正時」だけ鳴らす
+const CHIME_ENABLED = true;
+const CHIME_FROM_HOUR = 6;    // 6時から
+const CHIME_TO_HOUR = 22;     // 22時まで（22時の正時を含む）
 
 /* ================= フリップ時計 ================= */
 function buildCard(el) {
@@ -277,10 +290,69 @@ function getLocation() {
   });
 }
 let loc = null;
+
+/* ---- 気象庁：アメダス（実測）＋ 府県予報 ---- */
+function jmaIcon(code, text, rainingNow) {
+  if (rainingNow) return ICON.rain;
+  if (/雷/.test(text) && /^3/.test(code)) return ICON.storm;
+  if (/雪/.test(text) && /^[34]/.test(code)) return ICON.snow;
+  const d = String(code)[0];
+  if (d === '1') return code === '100' ? ICON.sun : ICON.partly;
+  if (d === '2') return code === '201' ? ICON.partly : ICON.cloud;
+  if (d === '3') return ICON.rain;
+  if (d === '4') return ICON.snow;
+  return ICON.cloud;
+}
+async function updateWeatherJMA() {
+  const base = 'https://www.jma.go.jp/bosai';
+  const [latest, fc] = await Promise.all([
+    fetch(`${base}/amedas/data/latest_time.txt`, { cache: 'no-store' }).then(r => r.text()),
+    fetch(`${base}/forecast/data/forecast/${JMA.forecastCode}.json`, { cache: 'no-store' }).then(r => r.json())
+  ]);
+  const t = latest.trim();                                   // 例 2026-11-17T14:30:00+09:00
+  const key = t.replace(/[-:T]/g, '').slice(0, 12) + '00';  // 例 20261117143000
+  const map = await fetch(`${base}/amedas/data/map/${key}.json`, { cache: 'no-store' }).then(r => r.json());
+  const o = map[JMA.amedas];
+  if (!o || !o.temp) throw new Error('観測値なし');
+
+  // 予報（島根県東部）
+  const ts = fc[0].timeSeries;
+  const a0 = ts[0].areas.find(a => a.area.name === JMA.forecastArea) || ts[0].areas[0];
+  const text = a0.weathers[0].replace(/[　 ]/g, '');
+  const code = a0.weatherCodes[0];
+  const a1 = ts[1].areas.find(a => a.area.name === JMA.forecastArea) || ts[1].areas[0];
+  let pi = 0; ts[1].timeDefines.forEach((d, i) => { if (new Date(d) <= new Date()) pi = i; });
+  const pop = a1.pops[pi] || a1.pops.find(p => p !== '') || '--';
+  const a2 = ts[2].areas.find(a => a.area.name === JMA.tempArea) || ts[2].areas[0];
+  const today = t.slice(0, 10), tmr = new Date(new Date(today + 'T12:00:00+09:00').getTime() + 864e5).toISOString().slice(0, 10);
+  const pick = prefix => { const i = ts[2].timeDefines.findIndex(d => d.startsWith(prefix)); return i >= 0 && a2.temps[i] !== '' ? a2.temps[i] : null; };
+  const tmax = pick(today + 'T09') ?? pick(tmr + 'T09');
+  const tmin = pick(tmr + 'T00') ?? pick(today + 'T00');
+
+  const raining = (o.precipitation10m && o.precipitation10m[0] > 0);
+  document.getElementById('w-place').textContent = FALLBACK_LOCATION.name + 'の天気';
+  document.getElementById('w-src').textContent = `実測 ${JMA.amedasName} ${t.slice(11, 16)}`;
+  document.getElementById('w-icon').innerHTML = jmaIcon(code, text, raining);
+  document.getElementById('w-desc').textContent = raining ? '雨が降っています' : text;
+  document.getElementById('w-temp').textContent = Math.round(o.temp[0]) + '°';
+  document.getElementById('w-hl').textContent = (tmax ?? '--') + '° / ' + (tmin ?? '--') + '°';
+  document.getElementById('w-pop').textContent = pop + (pop === '--' ? '' : '%');
+  document.getElementById('w-hum').textContent = o.humidity ? o.humidity[0] + '%' : '--';
+  document.getElementById('w-wind').textContent = o.wind ? o.wind[0] + ' m/s' : '--';
+}
 async function updateWeather() {
+  if (!USE_GEOLOCATION) {
+    try { await updateWeatherJMA(); return; } catch (e) { /* 気象庁が取得できなければ Open-Meteo に切り替える */ }
+  }
+  await updateWeatherOpenMeteo();
+}
+
+/* ---- 予備：Open-Meteo（予報モデルの推定値） ---- */
+async function updateWeatherOpenMeteo() {
   try {
     loc = loc || await getLocation();
     document.getElementById('w-place').textContent = loc.name + 'の天気';
+    document.getElementById('w-src').textContent = '予報モデル値';
     const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat.toFixed(2)}&longitude=${loc.lon.toFixed(2)}` +
       `&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m` +
       `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&wind_speed_unit=ms&forecast_days=1`;
@@ -386,6 +458,39 @@ function playAlarm(seconds = 12) {
     alarmNodes.push(o);
   }
 }
+/* ---- 時報：毎正時の3秒前から ピッ・ピッ・ピッ・ポーン（正時ちょうどに高い音） ---- */
+function playChime(top) {            // top: 正時の Date
+  if (!CHIME_ENABLED) return;
+  const h = top.getHours();
+  if (h < CHIME_FROM_HOUR || h > CHIME_TO_HOUR) return;
+  if (!actx || actx.state !== 'running') return;                 // 画面を一度もタップしていない
+  if (!document.getElementById('eew').hidden) return;            // 緊急地震速報の表示中は鳴らさない
+  const t0 = actx.currentTime + (top.getTime() - Date.now()) / 1000;   // 正時ちょうどの時刻（音声時計）
+  const tone = (start, freq, dur) => {
+    if (start < actx.currentTime) return;                        // 間に合わなかった音は鳴らさない
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(0.35, start + 0.01);
+    g.gain.setValueAtTime(0.35, start + dur - 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    o.connect(g).connect(actx.destination);
+    o.start(start); o.stop(start + dur + 0.02);
+  };
+  tone(t0 - 3, 440, 0.2);   // ピッ
+  tone(t0 - 2, 440, 0.2);   // ピッ
+  tone(t0 - 1, 440, 0.2);   // ピッ
+  tone(t0,     880, 1.0);   // ポーン
+}
+function scheduleChime() {
+  const now = new Date(), top = new Date(now);
+  top.setMinutes(0, 0, 0); top.setHours(now.getHours() + 1);
+  let wait = top - now - 5000;                                   // 正時の5秒前に準備する
+  if (wait < -2000) { top.setHours(top.getHours() + 1); wait = top - now - 5000; }
+  setTimeout(() => { playChime(top); setTimeout(scheduleChime, 8000); }, Math.max(wait, 0));
+}
+scheduleChime();
+
 let eewTimer = null;
 function showEEW(m) {
   if (m.cancelled || m.test) return;
