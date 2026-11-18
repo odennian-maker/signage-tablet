@@ -207,8 +207,8 @@ const JMA = {
 
 // 時報（NHK風：ピッ・ピッ・ピッ・ポーン）。この時間帯の「毎正時」だけ鳴らす
 const CHIME_ENABLED = true;
-const CHIME_FROM_HOUR = 6;    // 6時から
-const CHIME_TO_HOUR = 22;     // 22時まで（22時の正時を含む）
+const CHIME_FROM_HOUR = 0;    // 0時から
+const CHIME_TO_HOUR = 23;     // 23時まで（＝終日。夜間を止めたいときは 6 と 22 などに変える）
 
 /* ================= フリップ時計 ================= */
 function buildCard(el) {
@@ -469,13 +469,13 @@ function playChime(top) {            // top: 正時の Date
   if (!actx || actx.state !== 'running') return;                 // 画面を一度もタップしていない
   if (!document.getElementById('eew').hidden) return;            // 緊急地震速報の表示中は鳴らさない
   const t0 = actx.currentTime + (top.getTime() - Date.now()) / 1000;   // 正時ちょうどの時刻（音声時計）
-  const tone = (start, freq, dur) => {
+  const tone = (start, freq, dur, fade = 0.05) => {             // fade：最後にだんだん小さくなる長さ
     if (start < actx.currentTime) return;                        // 間に合わなかった音は鳴らさない
     const o = actx.createOscillator(), g = actx.createGain();
     o.type = 'sine'; o.frequency.value = freq;
     g.gain.setValueAtTime(0.0001, start);
     g.gain.exponentialRampToValueAtTime(0.35, start + 0.01);
-    g.gain.setValueAtTime(0.35, start + dur - 0.05);
+    g.gain.setValueAtTime(0.35, start + dur - fade);
     g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
     o.connect(g).connect(actx.destination);
     o.start(start); o.stop(start + dur + 0.02);
@@ -483,7 +483,7 @@ function playChime(top) {            // top: 正時の Date
   tone(t0 - 3, 440, 0.2);   // ピッ
   tone(t0 - 2, 440, 0.2);   // ピッ
   tone(t0 - 1, 440, 0.2);   // ピッ
-  tone(t0,     880, 1.0);   // ポーン
+  tone(t0,     880, 3.0, 2.0);   // ポーン（約3秒。最後の2秒でゆっくり消える）
 }
 function scheduleChime() {
   const now = new Date(), top = new Date(now);
