@@ -59,6 +59,10 @@
   .pills > div { padding: .3em .9em .45em; border-radius: 99px; background: #2b2b2d; }
   #date-r.dai { color: #ffd54a; } #date-r.butsu { color: #8d8d93; }
   #date-w.sun { color: #ff6b6b; } #date-w.sat { color: #5aa9ff; }
+  /* 祝日：交差した日の丸と祝日名（祝日のときだけ表示） */
+  .holiday { display: flex; align-items: center; gap: 1.4vh; font-size: min(7cqw, 3.8vh); color: #ffd54a; }
+  .holiday[hidden] { display: none; }
+  .holiday svg { height: 12vh; width: auto; flex: none; }
 
   /* ===== 下段 ===== */
   .bottom-row { display: grid; grid-template-columns: 1fr 1.5fr; gap: var(--gap); min-height: 0; }
@@ -139,6 +143,13 @@
   .n-bar i { display: block; height: 100%; width: 0; background: #4f9dff; }
   .n-bar i.run { animation: nbar linear forwards; }
   @keyframes nbar { from { width: 0; } to { width: 100%; } }
+  /* 地震が起きたときは、ニュース欄に1分間だけ地震情報を出す */
+  .news.quake-mode { background: radial-gradient(120% 90% at 100% 0%, rgba(170,20,20,.6), transparent 60%), linear-gradient(135deg, #1e1415, #0b0b0c); }
+  .news.quake-mode .n-label { color: #ff8a80; }
+  .news.quake-mode .n-bar i { background: #ff5252; }
+  .news.quake-mode .q-body { padding-right: 0; }
+  .news.quake-mode .row .v.area { word-break: keep-all; overflow-wrap: anywhere; }   /* 地名の途中で改行しない */
+  .news.new { animation: quakeNew 1s ease-out 4; }
   /* 緊急地震速報 */
   #eew { position: fixed; left: 0; right: 0; top: 0; z-index: 99; background: #d50000; color: #fff; text-align: center; padding: 2vh 3vw; animation: eewBlink 1s steps(2) infinite; }
   #eew[hidden] { display: none; }
@@ -173,6 +184,21 @@
     <div class="card" id="c-s"></div>
   </div>
   <div class="date">
+    <div class="holiday" id="holiday" hidden>
+      <svg viewBox="0 0 120 100" aria-hidden="true">
+        <defs>
+          <g id="hinomaru">
+            <line x1="0" y1="0" x2="0" y2="-92" stroke="#c9a86a" stroke-width="2.6" stroke-linecap="round"/>
+            <circle cx="0" cy="-94" r="3.2" fill="#e8c76a"/>
+            <rect x="-38" y="-89" width="38" height="26" fill="#fff" stroke="#d8d8d8" stroke-width=".8"/>
+            <circle cx="-19" cy="-76" r="7.6" fill="#bc002d"/>
+          </g>
+        </defs>
+        <use href="#hinomaru" transform="translate(72,97) rotate(-25)"/>
+        <use href="#hinomaru" transform="translate(48,97) rotate(25) scale(-1,1)"/>
+      </svg>
+      <span id="holiday-name"></span>
+    </div>
     <div id="date-ymd"></div>
     <div class="pills"><div id="date-w"></div><div id="date-r"></div></div>
   </div>
@@ -201,7 +227,7 @@
   </div>
 
   <div class="news" id="news">
-    <div class="n-head"><span class="n-label">NEWS</span><span id="n-count"></span></div>
+    <div class="n-head"><span class="n-label" id="n-label">NEWS</span><span id="n-count"></span></div>
     <div class="n-body" id="n-body"><div class="n-status">読み込み中…</div></div>
     <div class="n-dots" id="n-dots"></div>
     <div class="n-bar"><i id="n-bar"></i></div>
@@ -260,6 +286,38 @@ function rokuyo(d) {
   const day = parseInt(p.find(x => x.type === 'day').value, 10);
   return ROKUYO[(m + day) % 6];
 }
+// 祝日（国民の祝日に関する法律。春分・秋分は計算式で求める＝2099年まで有効）
+const holidayCache = {};
+function holidaysOf(y) {
+  if (holidayCache[y]) return holidayCache[y];
+  const H = {}, key = (m, d) => m + '-' + d;
+  const add = (m, d, n) => { H[key(m, d)] = n; };
+  const nthMonday = (m, n) => { const w = new Date(y, m - 1, 1).getDay(); return 1 + (8 - w) % 7 + (n - 1) * 7; };
+  const k = y - 1980;
+  add(1, 1, '元日');            add(1, nthMonday(1, 2), '成人の日');
+  add(2, 11, '建国記念の日');   add(2, 23, '天皇誕生日');
+  add(3, Math.floor(20.8431 + 0.242194 * k - Math.floor(k / 4)), '春分の日');
+  add(4, 29, '昭和の日');       add(5, 3, '憲法記念日'); add(5, 4, 'みどりの日'); add(5, 5, 'こどもの日');
+  add(7, nthMonday(7, 3), '海の日');   add(8, 11, '山の日');   add(9, nthMonday(9, 3), '敬老の日');
+  add(9, Math.floor(23.2488 + 0.242194 * k - Math.floor(k / 4)), '秋分の日');
+  add(10, nthMonday(10, 2), 'スポーツの日'); add(11, 3, '文化の日'); add(11, 23, '勤労感謝の日');
+  const base = Object.assign({}, H), kd = d => key(d.getMonth() + 1, d.getDate());
+  const day = (m, d) => new Date(y, m - 1, d);
+  // 国民の休日：祝日にはさまれた平日
+  for (let d = day(1, 2); d.getFullYear() === y; d.setDate(d.getDate() + 1)) {
+    const prev = new Date(d), next = new Date(d); prev.setDate(d.getDate() - 1); next.setDate(d.getDate() + 1);
+    if (!base[kd(d)] && d.getDay() !== 0 && base[kd(prev)] && base[kd(next)]) H[kd(d)] = '国民の休日';
+  }
+  // 振替休日：祝日が日曜なら、その後の最初の祝日でない日
+  Object.keys(base).forEach(s => {
+    const [m, dd] = s.split('-').map(Number), d = day(m, dd);
+    if (d.getDay() !== 0) return;
+    do { d.setDate(d.getDate() + 1); } while (H[kd(d)]);
+    if (d.getFullYear() === y) H[kd(d)] = '振替休日';
+  });
+  return holidayCache[y] = H;
+}
+const holidayName = d => holidaysOf(d.getFullYear())[(d.getMonth() + 1) + '-' + d.getDate()] || '';
 function tick() {
   const d = new Date();
   setCard(cH, pad(d.getHours())); setCard(cM, pad(d.getMinutes())); setCard(cS, pad(d.getSeconds()));
@@ -267,7 +325,10 @@ function tick() {
   document.getElementById('date-ymd').textContent = wy + wmd;
   const dw = document.getElementById('date-w');
   dw.textContent = '日月火水木金土'[d.getDay()] + '曜日';
-  dw.className = d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : '';
+  const hn = holidayName(d), hol = document.getElementById('holiday');
+  dw.className = (d.getDay() === 0 || hn) ? 'sun' : d.getDay() === 6 ? 'sat' : '';   // 祝日は日曜と同じ赤
+  hol.hidden = !hn;
+  document.getElementById('holiday-name').textContent = hn;
   const dr = document.getElementById('date-r'), r = rokuyo(d);
   dr.textContent = r;
   dr.className = r === '大安' ? 'dai' : r === '仏滅' ? 'butsu' : '';
@@ -395,6 +456,7 @@ const NEWS_API = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComp
 const NEWS_ROTATE_MS = 10000;          // 見出しを切り替える間隔
 const NEWS_POLL_MS = 30 * 60 * 1000;   // ニュースを取り直す間隔
 let news = [], nIndex = 0, nTimer = null;
+let quakeMode = false, quakeTimer = null;   // 地震情報の表示中かどうか
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function newsAgo(s) {                  // 例「3時間前」（中継サービスの時刻は世界標準時）
@@ -408,7 +470,7 @@ function newsAgo(s) {                  // 例「3時間前」（中継サービ�
 }
 function renderNews(animate) {
   const body = document.getElementById('n-body');
-  if (!news.length) return;
+  if (!news.length || quakeMode) return;    // 地震情報の表示中はニュースを出さない
   const n = news[nIndex];
   const draw = () => {
     const len = n.title.length, size = len > 70 ? 4.5 : len > 45 ? 5.7 : 6.6;   // 長い見出しは小さくして全文を収める
@@ -424,7 +486,7 @@ function renderNews(animate) {
 }
 function startNewsRotate() {
   clearInterval(nTimer);
-  if (news.length > 1) nTimer = setInterval(() => { nIndex = (nIndex + 1) % news.length; renderNews(true); }, NEWS_ROTATE_MS);
+  if (news.length > 1 && !quakeMode) nTimer = setInterval(() => { nIndex = (nIndex + 1) % news.length; renderNews(true); }, NEWS_ROTATE_MS);
 }
 async function updateNews() {
   try {
@@ -437,13 +499,82 @@ async function updateNews() {
     nIndex = 0; renderNews(false); startNewsRotate();
   } catch (e) {
     if (!news.length) {                // まだ一度も取れていないときだけ表示を出し、1分後に再挑戦
-      document.getElementById('n-body').innerHTML = '<div class="n-status">ニュースを取得できませんでした</div>';
+      if (!quakeMode) document.getElementById('n-body').innerHTML = '<div class="n-status">ニュースを取得できませんでした</div>';
       setTimeout(updateNews, 60 * 1000);
     }
   }
 }
 updateNews();
 setInterval(updateNews, NEWS_POLL_MS);
+
+/* ================= 地震情報（P2P地震情報。地震が起きたらニュース欄に1分間表示） ================= */
+const QUAKE_SHOW_MS = 60 * 1000;   // 地震情報を出しておく長さ（続報が来たら、そこからまた1分）
+const QUAKE_MIN_SCALE = 10;        // この最大震度以上のときだけ出す（10=震度1以上＝すべて、30=震度3以上、40=震度4以上）
+const SCALE = {
+  10: ['1', '#2d8cff'], 20: ['2', '#2fb86a'], 30: ['3', '#d6b800'], 40: ['4', '#f59a1b'],
+  45: ['5弱', '#f2692b'], 50: ['5強', '#e8452c'], 55: ['6弱', '#d81f3a'], 60: ['6強', '#b3126e'], 70: ['7', '#7b1fa2']
+};
+const ISSUE = { ScalePrompt: '震度速報', Destination: '震源に関する情報', ScaleAndDestination: '震源・震度に関する情報',
+  DetailScale: '各地の震度に関する情報', Foreign: '遠地地震に関する情報', Other: '地震情報' };
+const TSUNAMI = { None: '津波の心配なし', Unknown: '津波の有無は不明', Checking: '津波は調査中',
+  NonEffective: '若干の海面変動', Watch: '津波注意報', Warning: '津波警報' };
+const seenQuake = new Set();
+
+function onQuakeInfo(m, demo) {
+  const id = m.id || m._id;
+  if (id) { if (seenQuake.has(id)) return; seenQuake.add(id); }
+  const eq = m.earthquake || {}, ms = eq.maxScale ?? -1;
+  if (ms >= 0 && ms < QUAKE_MIN_SCALE) return;                       // 設定より小さい揺れは出さない
+  if (ms < 0 && QUAKE_MIN_SCALE > 10 && !quakeMode) return;          // 震度のない情報は、表示中の続報のときだけ
+  const h = eq.hypocenter || {};
+  const [label, color] = SCALE[ms] || ['–', '#666'];
+  const mag = h.magnitude >= 0 ? 'M' + Number(h.magnitude).toFixed(1) : '調査中';
+  const depth = h.depth > 0 ? h.depth + 'km' : (h.depth === 0 ? 'ごく浅い' : '調査中');
+  const groups = {};                                                // 震度の大きい順に地域をまとめる
+  (m.points || []).forEach(p => { (groups[p.scale] = groups[p.scale] || []).includes(p.addr) || groups[p.scale].push(p.addr); });
+  const area = Object.keys(groups).map(Number).sort((a, b) => b - a)
+    .map(s => `震度${(SCALE[s] || ['?'])[0]}：${groups[s].join('、')}`).join('　')
+    || (m.issue && m.issue.type === 'Foreign' ? '（海外の地震）' : '—');
+  const t = (eq.time || m.time || '').slice(0, 16).replace(/-/g, '/');
+  const issue = ISSUE[m.issue && m.issue.type] || '地震情報', tsu = TSUNAMI[eq.domesticTsunami] || '';
+
+  quakeMode = true; clearInterval(nTimer);
+  const card = document.getElementById('news'), body = document.getElementById('n-body');
+  card.classList.add('quake-mode');
+  card.classList.remove('new'); void card.offsetWidth; card.classList.add('new');
+  document.getElementById('n-label').textContent = '地震情報';
+  document.getElementById('n-count').textContent = (demo ? '（表示テスト）' : '') + issue + (tsu ? '　' + tsu : '');
+  document.getElementById('n-dots').innerHTML = '';
+  body.classList.remove('fade');
+  body.innerHTML = `<div class="q-body">
+    <div class="shindo" style="background:${color}"><small>最大震度</small><b class="${label.length > 1 ? 'two' : ''}">${esc(label)}</b></div>
+    <div class="q-rows">
+      <div class="row"><div class="k">発生時刻</div><div class="v">${esc(t)}</div></div>
+      <div class="row"><div class="k">震源地</div><div class="v">${esc(h.name || '調査中')}</div></div>
+      <div class="row"><div class="k">規模 / 深さ</div><div class="v">${mag}<em>/</em>${depth}</div></div>
+      <div class="row"><div class="k">観測した地域</div><div class="v area">${esc(area)}</div></div>
+    </div></div>`;
+  const bar = document.getElementById('n-bar');                     // 1分間の残り
+  bar.classList.remove('run'); void bar.offsetWidth;
+  bar.style.animationDuration = QUAKE_SHOW_MS + 'ms'; bar.classList.add('run');
+  clearTimeout(quakeTimer); quakeTimer = setTimeout(endQuake, QUAKE_SHOW_MS);
+}
+function endQuake() {                                                // 1分たったらニュースに戻る
+  quakeMode = false;
+  const card = document.getElementById('news');
+  card.classList.remove('quake-mode', 'new');
+  document.getElementById('n-label').textContent = 'NEWS';
+  document.getElementById('n-count').textContent = '';
+  if (news.length) { renderNews(false); startNewsRotate(); }
+  else { document.getElementById('n-body').innerHTML = '<div class="n-status">読み込み中…</div>'; updateNews(); }
+}
+// 表示テスト：アドレスの末尾に ?demo を付けて開くと、5秒後に見本の地震情報を1分間出す
+if (new URLSearchParams(location.search).has('demo')) setTimeout(() => onQuakeInfo({
+  issue: { type: 'DetailScale' },
+  earthquake: { time: '2026/11/21 10:05:00', maxScale: 30, domesticTsunami: 'None',
+    hypocenter: { name: '島根県東部', magnitude: 4.2, depth: 10 } },
+  points: [{ addr: '安来市', scale: 30 }, { addr: '松江市', scale: 30 }, { addr: '米子市', scale: 20 }, { addr: '出雲市', scale: 10 }]
+}, true), 5000);
 /* ---- 警報音（Web Audio）。ブラウザの仕様で、一度画面をタップするまで鳴らせない ---- */
 let actx = null, alarmNodes = [];
 const audioHint = document.getElementById('audio-hint');
@@ -523,7 +654,8 @@ function connectWS() {
   ws.onopen = () => { wsDelay = 1000; };
   ws.onmessage = ev => {
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-    if (m.code === 556) showEEW(m);     // 緊急地震速報（警報）だけを受け取る。地震情報カードはこの版にはない
+    if (m.code === 556) showEEW(m);     // 緊急地震速報（警報）：赤い帯と警報音
+    if (m.code === 551) onQuakeInfo(m); // 地震情報：ニュース欄に1分間表示
   };
   ws.onclose = () => { setTimeout(connectWS, wsDelay); wsDelay = Math.min(wsDelay * 2, 60000); };
   ws.onerror = () => ws.close();
