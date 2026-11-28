@@ -519,6 +519,25 @@ const ISSUE = { ScalePrompt: '震度速報', Destination: '震源に関する情
 const TSUNAMI = { None: '津波の心配なし', Unknown: '津波の有無は不明', Checking: '津波は調査中',
   NonEffective: '若干の海面変動', Watch: '津波注意報', Warning: '津波警報' };
 const seenQuake = new Set();
+const QUAKE_SOUND = true;          // 地震情報を出すときに軽い音で知らせる（止めるなら false）
+
+// 地震情報の通知音：やわらかい「ポロン・ポロン」（緊急地震速報のブザー音・時報とは別の音）
+function playQuakeNotice() {
+  if (!QUAKE_SOUND || !actx || actx.state !== 'running') return;   // 画面を一度もタップしていないと鳴らせない
+  if (!document.getElementById('eew').hidden) return;               // 緊急地震速報の警報音が鳴っている間は鳴らさない
+  const tone = (start, freq) => {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(0.22, start + 0.02);        // 音量は時報（0.35）より小さめ
+    g.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);       // すぐに消えていく
+    o.connect(g).connect(actx.destination);
+    o.start(start); o.stop(start + 0.95);
+  };
+  const t = actx.currentTime + 0.05;
+  tone(t, 659); tone(t + 0.18, 988);               // ミ→シ（ポロン）
+  tone(t + 0.9, 659); tone(t + 1.08, 988);         // もう一度
+}
 
 function onQuakeInfo(m, demo) {
   const id = m.id || m._id;
@@ -538,6 +557,7 @@ function onQuakeInfo(m, demo) {
   const t = (eq.time || m.time || '').slice(0, 16).replace(/-/g, '/');
   const issue = ISSUE[m.issue && m.issue.type] || '地震情報', tsu = TSUNAMI[eq.domesticTsunami] || '';
 
+  if (!quakeMode) playQuakeNotice();   // 知らせる音は最初の1回だけ（続報では鳴らさない）
   quakeMode = true; clearInterval(nTimer);
   const card = document.getElementById('news'), body = document.getElementById('n-body');
   card.classList.add('quake-mode');
